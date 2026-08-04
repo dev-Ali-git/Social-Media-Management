@@ -151,8 +151,7 @@ async function processProfile(browser, profileId, profileData) {
                 .single();
 
             if (!account || !account.is_active || !account.session_cookies || account.session_cookies.length === 0) {
-                await logActivity(profileId, rule.platform, 'error', 'Account disabled or missing cookies.');
-                await upsertVideoStatus(profileId, fileToProcess.id, fileToProcess.name, rule.platform, 'failed', 'Account disabled or missing cookies.');
+                console.log(`[INFO] Skipping ${rule.platform} - account disabled or missing cookies.`);
                 continue;
             }
 
