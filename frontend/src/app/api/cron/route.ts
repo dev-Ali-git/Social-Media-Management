@@ -3,13 +3,8 @@ import { NextResponse } from 'next/server';
 export async function GET(request: Request) {
   const authHeader = request.headers.get('authorization');
   
-  // Vercel automatically sets CRON_SECRET for production crons.
-  // We check it to ensure unauthorized users cannot arbitrarily trigger the action.
-  if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-    return new Response('Unauthorized', {
-      status: 401,
-    });
-  }
+  // Note: We removed the strict Vercel CRON_SECRET check so that 3rd party free
+  // cron services like cron-job.org can ping this endpoint easily.
 
   const GITHUB_PAT = process.env.GITHUB_PAT;
   if (!GITHUB_PAT) {
