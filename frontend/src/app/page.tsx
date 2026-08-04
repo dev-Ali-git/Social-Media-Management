@@ -100,6 +100,23 @@ export default function Home() {
     }
   }
 
+  async function deleteVideoHistoryRecord(fileName: string) {
+    if (!selectedProfile) return;
+    if (!confirm(`Are you sure you want to delete history for "${fileName}"?`)) return;
+    
+    const { error } = await supabase
+      .from("video_uploads")
+      .delete()
+      .eq("profile_id", selectedProfile.id)
+      .eq("file_name", fileName);
+      
+    if (!error) {
+      setVideoHistory(videoHistory.filter(([name]) => name !== fileName));
+    } else {
+      alert("Error deleting record: " + error.message);
+    }
+  }
+
   async function toggleAutomation() {
     if (!selectedProfile) return;
     const newState = !selectedProfile.is_active;
@@ -374,6 +391,7 @@ export default function Home() {
                         <th className="p-4 font-semibold text-gray-300">Instagram</th>
                         <th className="p-4 font-semibold text-gray-300">Facebook</th>
                         <th className="p-4 font-semibold text-gray-300">YouTube</th>
+                        <th className="p-4 font-semibold text-gray-300 text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-surface-border">
@@ -387,6 +405,15 @@ export default function Home() {
                             if (info.status === 'failed') return <td key={plat} className="p-4 text-red-400 group relative cursor-help"><XCircle className="w-5 h-5 inline mr-1"/> Failed<div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-48 p-2 bg-red-950/90 text-red-200 text-xs rounded border border-red-900 z-10 whitespace-normal">{info.error || 'Unknown error'}</div></td>;
                             return <td key={plat} className="p-4 text-gray-400">{info.status}</td>;
                           })}
+                          <td className="p-4 text-right">
+                            <button 
+                              onClick={() => deleteVideoHistoryRecord(fileName)}
+                              className="text-gray-500 hover:text-red-400 p-2 rounded-lg hover:bg-red-500/10 transition-colors"
+                              title="Delete Record"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
