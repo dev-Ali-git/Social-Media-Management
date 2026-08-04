@@ -17,6 +17,9 @@ export default function Home() {
   const [isEditingName, setIsEditingName] = useState(false);
   const [editNameValue, setEditNameValue] = useState("");
 
+  const [showVideoHistory, setShowVideoHistory] = useState(false);
+  const [videoHistory, setVideoHistory] = useState<[string, any][]>([]);
+
   useEffect(() => {
     fetchProfiles();
   }, []);
@@ -24,6 +27,7 @@ export default function Home() {
   useEffect(() => {
     if (selectedProfile) {
       fetchLogs(selectedProfile.id);
+      fetchVideoHistory(selectedProfile.id);
     }
   }, [selectedProfile]);
 
@@ -76,6 +80,23 @@ export default function Home() {
       }).length;
       
       setStats({ total, month: thisMonth, errors });
+    }
+  }
+
+  async function fetchVideoHistory(profileId: string) {
+    const { data } = await supabase
+      .from("video_uploads")
+      .select("*")
+      .eq("profile_id", profileId)
+      .order("created_at", { ascending: false });
+    
+    if (data) {
+      const grouped = data.reduce((acc: any, curr: any) => {
+        if (!acc[curr.file_name]) acc[curr.file_name] = {};
+        acc[curr.file_name][curr.platform] = { status: curr.status, error: curr.error_message, date: curr.created_at };
+        return acc;
+      }, {});
+      setVideoHistory(Object.entries(grouped));
     }
   }
 
@@ -241,6 +262,15 @@ export default function Home() {
                
                <div className="flex items-center gap-3 relative z-10">
                  <button 
+                   onClick={() => setShowVideoHistory(true)}
+                   className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium transition-all bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 hover:bg-indigo-500/20"
+                   title="Video History"
+                 >
+                   <FileVideo className="w-4 h-4" />
+                   <span className="hidden sm:inline">History</span>
+                 </button>
+                 
+                 <button 
                    onClick={deleteProfile}
                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium transition-all bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20"
                    title="Delete Profile"
@@ -320,6 +350,53 @@ export default function Home() {
           </div>
         )}
       </div>
+
+      {showVideoHistory && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-surface border border-surface-border w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="p-6 border-b border-surface-border flex justify-between items-center bg-black/20">
+              <h2 className="text-2xl font-bold flex items-center gap-2"><FileVideo className="w-6 h-6 text-indigo-400" /> Video Tracking History</h2>
+              <button onClick={() => setShowVideoHistory(false)} className="text-gray-400 hover:text-white"><XCircle className="w-6 h-6" /></button>
+            </div>
+            <div className="p-6 overflow-y-auto flex-1 bg-black/10">
+              {videoHistory.length === 0 ? (
+                <div className="text-center py-12 text-gray-500">
+                  <HardDrive className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                  <p>No videos processed yet.</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto rounded-xl border border-surface-border">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-black/40 border-b border-surface-border">
+                        <th className="p-4 font-semibold text-gray-300">File Name</th>
+                        <th className="p-4 font-semibold text-gray-300">TikTok</th>
+                        <th className="p-4 font-semibold text-gray-300">Instagram</th>
+                        <th className="p-4 font-semibold text-gray-300">Facebook</th>
+                        <th className="p-4 font-semibold text-gray-300">YouTube</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-surface-border">
+                      {videoHistory.map(([fileName, platforms]) => (
+                        <tr key={fileName} className="hover:bg-white/5 transition-colors">
+                          <td className="p-4 font-medium text-gray-200">{fileName}</td>
+                          {['tiktok', 'instagram', 'facebook', 'youtube'].map(plat => {
+                            const info = platforms[plat];
+                            if (!info) return <td key={plat} className="p-4 text-gray-600">—</td>;
+                            if (info.status === 'success') return <td key={plat} className="p-4 text-green-400" title={`Uploaded at ${new Date(info.date).toLocaleString()}`}><CheckCircle2 className="w-5 h-5 inline mr-1"/> Success</td>;
+                            if (info.status === 'failed') return <td key={plat} className="p-4 text-red-400 group relative cursor-help"><XCircle className="w-5 h-5 inline mr-1"/> Failed<div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block w-48 p-2 bg-red-950/90 text-red-200 text-xs rounded border border-red-900 z-10 whitespace-normal">{info.error || 'Unknown error'}</div></td>;
+                            return <td key={plat} className="p-4 text-gray-400">{info.status}</td>;
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

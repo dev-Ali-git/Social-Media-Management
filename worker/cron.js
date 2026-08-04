@@ -12,7 +12,6 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
     realtime: { transport: ws }
 });
 
-// Helper function to log to DB and console
 async function logActivity(profileId, platform, status, message) {
     console.log(`[${status.toUpperCase()}] ${platform || 'SYSTEM'}: ${message}`);
     try {
@@ -22,21 +21,32 @@ async function logActivity(profileId, platform, status, message) {
             status,
             message
         });
+    } catch (e) {}
+}
+
+async function upsertVideoStatus(profileId, fileId, fileName, platform, status, errorMessage = null) {
+    try {
+        await supabase.from('video_uploads').upsert({
+            profile_id: profileId,
+            file_id: fileId,
+            file_name: fileName,
+            platform: platform,
+            status: status,
+            error_message: errorMessage
+        }, { onConflict: 'profile_id,file_id,platform' });
     } catch (e) {
-        // Silently fail if table doesn't exist yet
+        console.error('Failed to upsert video status', e);
     }
 }
 
 async function processProfile(browser, profileId, profileData) {
-    // Check if profile is globally active (if the column exists)
-    // Default to true if column is missing or undefined
     if (profileData.is_active === false) {
-        return; // Skip disabled profiles
+        return;
     }
 
     try {
         // ==========================================
-        // PHASE 1: DOWNLOAD FROM GOOGLE DRIVE (ONCE PER PROFILE)
+        // PHASE 1: FIND NEXT VIDEO IN DRIVE
         // ==========================================
         const { data: driveFolder } = await supabase
             .from('drive_folders')
@@ -45,8 +55,8 @@ async function processProfile(browser, profileId, profileData) {
             .eq('folder_type', 'source')
             .single();
         
-        let downloadedFilePath = null;
-        let sourceFileId = null;
+        let fileToProcess = null;
+        let platformsToUpload = [];
         
         if (driveFolder && driveFolder.folder_url) {
             const driveContext = await browser.newContext({ acceptDownloads: true });
@@ -59,19 +69,44 @@ async function processProfile(browser, profileId, profileData) {
                 const folderIdMatch = driveFolder.folder_url.match(/folders\/([a-zA-Z0-9_-]+)/);
                 const folderId = folderIdMatch ? folderIdMatch[1] : null;
 
-                const fileId = await drivePage.evaluate((folderId) => {
+                const filesInDrive = await drivePage.evaluate((folderId) => {
                     const elements = document.querySelectorAll('div[data-id]');
+                    let files = [];
                     for (const el of elements) {
                         const id = el.getAttribute('data-id');
-                        if (id && id.length > 25 && id !== folderId) return id; 
+                        const name = el.getAttribute('aria-label') || el.innerText || 'Unknown Video';
+                        if (id && id.length > 25 && id !== folderId) {
+                            files.push({ id, name });
+                        }
                     }
-                    return null;
+                    return files;
                 }, folderId);
                 
-                if (fileId) {
-                    sourceFileId = fileId;
-                    const downloadUrl = `https://drive.google.com/uc?export=download&id=${fileId}`;
+                const { data: uploadHistory } = await supabase
+                    .from('video_uploads')
+                    .select('*')
+                    .eq('profile_id', profileId);
                     
+                const history = uploadHistory || [];
+
+                for (const file of filesInDrive) {
+                    let pendingPlatforms = [];
+                    for (const rule of profileData.rules) {
+                        const record = history.find(h => h.file_id === file.id && h.platform === rule.platform);
+                        if (!record || record.status !== 'success') {
+                            pendingPlatforms.push(rule);
+                        }
+                    }
+                    
+                    if (pendingPlatforms.length > 0) {
+                        fileToProcess = file;
+                        platformsToUpload = pendingPlatforms;
+                        break; 
+                    }
+                }
+                
+                if (fileToProcess) {
+                    const downloadUrl = `https://drive.google.com/uc?export=download&id=${fileToProcess.id}`;
                     const downloadPromise = drivePage.waitForEvent('download', { timeout: 120000 }).catch(() => null);
                     await drivePage.goto(downloadUrl).catch(e => {
                         if (!e.message.includes('ERR_ABORTED')) {}
@@ -87,9 +122,11 @@ async function processProfile(browser, profileId, profileData) {
                         const downloadsDir = path.join(__dirname, 'downloads');
                         if (!fs.existsSync(downloadsDir)) fs.mkdirSync(downloadsDir);
                         
-                        downloadedFilePath = path.join(downloadsDir, download.suggestedFilename());
-                        await download.saveAs(downloadedFilePath);
+                        fileToProcess.localPath = path.join(downloadsDir, download.suggestedFilename());
+                        await download.saveAs(fileToProcess.localPath);
                         await logActivity(profileId, 'drive', 'info', `Video downloaded: ${download.suggestedFilename()}`);
+                    } else {
+                        fileToProcess = null;
                     }
                 }
             } catch (e) {
@@ -98,15 +135,14 @@ async function processProfile(browser, profileId, profileData) {
             await driveContext.close();
         }
 
-        if (!downloadedFilePath) {
-            // No video found, just silently exit this loop (don't spam logs)
+        if (!fileToProcess || !fileToProcess.localPath) {
             return;
         }
 
         // ==========================================
-        // PHASE 2: UPLOAD TO ALL CONFIGURED SOCIAL MEDIA (LOOP THROUGH RULES)
+        // PHASE 2: UPLOAD TO PENDING PLATFORMS
         // ==========================================
-        for (const rule of profileData.rules) {
+        for (const rule of platformsToUpload) {
             const { data: account } = await supabase
                 .from('social_accounts')
                 .select('*')
@@ -116,6 +152,7 @@ async function processProfile(browser, profileId, profileData) {
 
             if (!account || !account.is_active || !account.session_cookies || account.session_cookies.length === 0) {
                 await logActivity(profileId, rule.platform, 'error', 'Account disabled or missing cookies.');
+                await upsertVideoStatus(profileId, fileToProcess.id, fileToProcess.name, rule.platform, 'failed', 'Account disabled or missing cookies.');
                 continue;
             }
 
@@ -127,6 +164,7 @@ async function processProfile(browser, profileId, profileData) {
                 
             if (!scriptData || !scriptData.script_code) {
                 await logActivity(profileId, rule.platform, 'error', 'No automation script recorded for this platform.');
+                await upsertVideoStatus(profileId, fileToProcess.id, fileToProcess.name, rule.platform, 'failed', 'No automation script recorded.');
                 continue;
             }
 
@@ -161,21 +199,20 @@ async function processProfile(browser, profileId, profileData) {
             }
 
             const page = await context.newPage();
-            page.setDefaultTimeout(1800000); // 30 mins
+            page.setDefaultTimeout(1800000); 
             
-            const baseFileName = path.basename(downloadedFilePath, path.extname(downloadedFilePath));
+            const baseFileName = path.basename(fileToProcess.localPath, path.extname(fileToProcess.localPath));
             const finalCaption = (rule.caption_template || '')
                 .replace('{filename}', baseFileName)
                 .replace('{hashtags}', rule.hashtags || '');
 
             try {
                 let finalMacroCode = scriptData.script_code;
-                if (downloadedFilePath) {
-                    finalMacroCode = finalMacroCode.replace(/\.(setInputFiles|setFiles)\(\[?['`"].*?['`"]\]?\)/g, `.$1(${JSON.stringify(downloadedFilePath)})`);
+                if (fileToProcess.localPath) {
+                    finalMacroCode = finalMacroCode.replace(/\.(setInputFiles|setFiles)\(\[?['`"].*?['`"]\]?\)/g, `.$1(${JSON.stringify(fileToProcess.localPath)})`);
                 }
                 finalMacroCode = finalMacroCode.replace(/OMNIPOST_CAPTION/g, finalCaption);
                 
-                // Allow dynamic page switching if the user sets these placeholders in their script
                 finalMacroCode = finalMacroCode.replace(/OMNIPOST_PROFILE_NAME/g, profileData.profile_name);
                 if (account.username) {
                     finalMacroCode = finalMacroCode.replace(/OMNIPOST_USERNAME/g, account.username);
@@ -214,8 +251,8 @@ async function processProfile(browser, profileId, profileData) {
                 }
 
                 await logActivity(profileId, rule.platform, 'success', 'Video successfully uploaded and published!');
+                await upsertVideoStatus(profileId, fileToProcess.id, fileToProcess.name, rule.platform, 'success');
                 
-                // If it was a scheduled slot, remove it from the database!
                 if (rule.matchedSlot) {
                     const newTimeSlots = rule.time_slots.filter(s => !(s.date === rule.matchedSlot.date && s.time === rule.matchedSlot.time));
                     await supabase.from('publishing_rules').update({ time_slots: newTimeSlots }).eq('id', rule.id);
@@ -223,86 +260,14 @@ async function processProfile(browser, profileId, profileData) {
                 }
             } catch (macroErr) {
                 await logActivity(profileId, rule.platform, 'error', `Macro execution failed: ${macroErr.message}`);
+                await upsertVideoStatus(profileId, fileToProcess.id, fileToProcess.name, rule.platform, 'failed', macroErr.message);
             }
 
             await context.close();
         }
-
-        // ==========================================
-        // PHASE 3: GOOGLE DRIVE CLEANUP (ONCE PER PROFILE)
-        // ==========================================
-        const { data: completedFolder } = await supabase
-            .from('drive_folders')
-            .select('folder_url')
-            .eq('profile_id', profileId)
-            .eq('folder_type', 'completed')
-            .single();
-
-        const { data: driveAccount } = await supabase
-            .from('social_accounts')
-            .select('session_cookies')
-            .eq('profile_id', profileId)
-            .eq('platform', 'drive')
-            .single();
-
-        if (completedFolder && completedFolder.folder_url && driveAccount && driveAccount.session_cookies && sourceFileId) {
-            const cleanupContext = await browser.newContext({ 
-                userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36' 
-            });
-            
-            let formattedDriveCookies = driveAccount.session_cookies.map(cookie => {
-                let sameSite = undefined;
-                if (typeof cookie.sameSite === 'string') {
-                    const s = cookie.sameSite.toLowerCase();
-                    if (s === 'no_restriction' || s === 'none') sameSite = 'None';
-                    else if (s === 'lax') sameSite = 'Lax';
-                    else if (s === 'strict') sameSite = 'Strict';
-                }
-                return {
-                    name: cookie.name,
-                    value: cookie.value,
-                    domain: cookie.domain,
-                    path: cookie.path,
-                    expires: typeof cookie.expirationDate === 'number' ? cookie.expirationDate : (typeof cookie.expires === 'number' ? cookie.expires : -1),
-                    httpOnly: cookie.httpOnly || false,
-                    secure: cookie.secure || false,
-                    sameSite: sameSite
-                };
-            });
-            
-            await cleanupContext.addCookies(formattedDriveCookies).catch(e => {});
-            const cleanupPage = await cleanupContext.newPage();
-            
-            try {
-                await cleanupPage.goto(driveFolder.folder_url, { waitUntil: 'domcontentloaded' });
-                await cleanupPage.waitForTimeout(5000);
-                
-                const fileElement = cleanupPage.locator(`div[data-id="${sourceFileId}"]`).first();
-                if (await fileElement.isVisible()) {
-                    await fileElement.click();
-                    await cleanupPage.keyboard.press('Delete');
-                    await cleanupPage.waitForTimeout(3000);
-                }
-                
-                await cleanupPage.goto(completedFolder.folder_url, { waitUntil: 'domcontentloaded' });
-                await cleanupPage.waitForTimeout(4000);
-                
-                const [fileChooser] = await Promise.all([
-                    cleanupPage.waitForEvent('filechooser', { timeout: 60000 }),
-                    cleanupPage.getByRole('button', { name: 'New' }).click().then(() => 
-                        cleanupPage.getByRole('menuitem', { name: 'File upload' }).click()
-                    )
-                ]);
-                await fileChooser.setFiles(downloadedFilePath);
-                
-                await cleanupPage.getByText('1 upload complete', { exact: false }).waitFor({ timeout: 300000 });
-                await logActivity(profileId, 'drive', 'success', 'Original file moved to completed folder.');
-                
-                if (fs.existsSync(downloadedFilePath)) fs.unlinkSync(downloadedFilePath);
-            } catch (e) {
-                await logActivity(profileId, 'drive', 'error', `Drive Cleanup error: ${e.message}`);
-            }
-            await cleanupContext.close();
+        
+        if (fileToProcess.localPath && fs.existsSync(fileToProcess.localPath)) {
+            fs.unlinkSync(fileToProcess.localPath);
         }
 
     } catch (err) {
@@ -318,7 +283,7 @@ async function startDaemon() {
     console.log('Running a single upload pass...');
     console.log('======================================================\n');
 
-    const browser = await chromium.launch({ headless: false }); 
+    const browser = await chromium.launch({ headless: process.env.NODE_ENV !== 'development' }); 
 
     try {
         const now = new Date();
@@ -350,7 +315,7 @@ async function startDaemon() {
                     }
                 }
                 if (!matchedSlot) {
-                    continue; // Skip, not yet time
+                    continue; 
                 }
             }
 
