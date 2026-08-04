@@ -122,9 +122,12 @@ async function processProfile(browser, profileId, profileData) {
                         const downloadsDir = path.join(__dirname, 'downloads');
                         if (!fs.existsSync(downloadsDir)) fs.mkdirSync(downloadsDir);
                         
-                        fileToProcess.localPath = path.join(downloadsDir, download.suggestedFilename());
+                        const realFileName = download.suggestedFilename();
+                        fileToProcess.name = realFileName;
+                        fileToProcess.localPath = path.join(downloadsDir, realFileName);
+                        
                         await download.saveAs(fileToProcess.localPath);
-                        await logActivity(profileId, 'drive', 'info', `Video downloaded: ${download.suggestedFilename()}`);
+                        await logActivity(profileId, 'drive', 'info', `Video downloaded: ${realFileName}`);
                     } else {
                         fileToProcess = null;
                     }
