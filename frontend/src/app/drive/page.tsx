@@ -11,7 +11,6 @@ export default function DrivePage() {
   
   const [selectedProfileId, setSelectedProfileId] = useState("");
   const [newFolderUrl, setNewFolderUrl] = useState("");
-  const [folderType, setFolderType] = useState("source");
 
   useEffect(() => {
     fetchData();
@@ -40,7 +39,7 @@ export default function DrivePage() {
     const { data, error } = await supabase.from("drive_folders").insert([{
       profile_id: selectedProfileId,
       folder_url: newFolderUrl,
-      folder_type: folderType
+      folder_type: 'source'
     }]).select("*, profiles(name)");
 
     if (data) {
@@ -95,20 +94,7 @@ export default function DrivePage() {
               </select>
             </div>
             
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="text-sm text-gray-400 mb-1 block">Folder Type</label>
-                <select 
-                  value={folderType}
-                  onChange={(e) => setFolderType(e.target.value)}
-                  className="w-full bg-black/20 border border-surface-border rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 transition-colors appearance-none"
-                >
-                  <option value="source">Edited Videos (Source)</option>
-                  <option value="completed">Upload Done (Destination)</option>
-                </select>
-              </div>
-              
-              <div>
+            <div>
                 <label className="text-sm text-gray-400 mb-1 block">Drive Link</label>
                 <input 
                   type="url" 
@@ -142,15 +128,15 @@ export default function DrivePage() {
            ) : (
              driveLinks.map(link => (
                <div key={link.id} className="flex flex-col sm:flex-row sm:items-center justify-between p-4 rounded-xl bg-black/20 border border-surface-border gap-4">
-                 <div className="flex items-center gap-4">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${link.folder_type === 'source' ? 'bg-indigo-500/20' : 'bg-green-500/20'}`}>
-                      <FolderPlus className={`w-5 h-5 ${link.folder_type === 'source' ? 'text-indigo-400' : 'text-green-400'}`} />
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 bg-indigo-500/20">
+                      <FolderPlus className="w-5 h-5 text-indigo-400" />
                     </div>
                     <div>
                       <p className="font-medium">{link.profiles?.name || 'Unknown Profile'}</p>
                       <p className="text-sm text-gray-400">
-                        {link.folder_type === 'source' ? 'Reads from: ' : 'Moves to: '}
-                        <a href={link.folder_url} target="_blank" className="text-indigo-400 hover:underline inline-block max-w-[200px] sm:max-w-xs truncate align-bottom">
+                        Source Folder: 
+                        <a href={link.folder_url} target="_blank" className="text-indigo-400 hover:underline inline-block max-w-[200px] sm:max-w-xs truncate align-bottom ml-1">
                            {link.folder_url}
                         </a>
                       </p>

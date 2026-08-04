@@ -136,7 +136,6 @@ export default function SocialsPage() {
                  <option value="tiktok">TikTok</option>
                  <option value="instagram">Instagram</option>
                  <option value="facebook">Facebook</option>
-                 <option value="drive">Google Drive</option>
                </select>
              </div>
              
