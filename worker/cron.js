@@ -199,7 +199,7 @@ async function processProfile(browser, profileId, profileData) {
             }
 
             const page = await context.newPage();
-            page.setDefaultTimeout(1800000); 
+            page.setDefaultTimeout(60000); // 60 seconds default to prevent infinite hangs
             
             const baseFileName = path.basename(fileToProcess.localPath, path.extname(fileToProcess.localPath));
             const finalCaption = (rule.caption_template || '')
@@ -221,6 +221,7 @@ async function processProfile(browser, profileId, profileData) {
                 const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
                 const dynamicMacro = new AsyncFunction('page', finalMacroCode);
                 
+                await logActivity(profileId, rule.platform, 'info', `Executing automation macro...`);
                 await dynamicMacro(page);
                 
                 let isUploading = true;
