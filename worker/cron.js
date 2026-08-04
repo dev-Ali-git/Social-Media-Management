@@ -364,7 +364,9 @@ async function startDaemon() {
             profilesMap[rule.profile_id].rules.push({ ...rule, matchedSlot });
         }
 
-        const activeProfiles = Object.entries(profilesMap);
+        const allProfiles = Object.entries(profilesMap);
+        const activeProfiles = allProfiles.filter(([_, data]) => data.is_active !== false);
+        
         if (activeProfiles.length > 0) {
             const eligibleProfiles = activeProfiles.filter(([id]) => !processingProfiles.has(id));
             
