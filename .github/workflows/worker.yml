@@ -1,0 +1,40 @@
+name: OmniPost Worker
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+jobs:
+  run-worker:
+    runs-on: ubuntu-latest
+    
+    env:
+      TZ: 'Asia/Karachi'
+      
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies
+        working-directory: ./worker
+        run: npm install
+
+      - name: Install Playwright Browsers & OS Dependencies
+        working-directory: ./worker
+        run: npx playwright install --with-deps chromium
+
+      - name: Install Xvfb (Virtual Framebuffer)
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+
+      - name: Run Worker Engine (Headless Bypass)
+        working-directory: ./worker
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1280x1024x24" node cron.js
