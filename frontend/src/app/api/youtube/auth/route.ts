@@ -9,10 +9,11 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Missing profileId' }, { status: 400 });
   }
 
+  const baseUrl = (process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
   const oauth2Client = new google.auth.OAuth2(
     process.env.YOUTUBE_CLIENT_ID,
     process.env.YOUTUBE_CLIENT_SECRET,
-    `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/youtube/callback`
+    `${baseUrl}/api/youtube/callback`
   );
 
   const scopes = [
