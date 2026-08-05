@@ -158,6 +158,72 @@ async function processProfile(browser, profileId, profileData) {
                 continue;
             }
 
+            if (rule.platform === 'youtube' && account.session_cookies && !Array.isArray(account.session_cookies) && account.session_cookies.access_token) {
+                try {
+                    await logActivity(profileId, rule.platform, 'info', `Uploading to YouTube via official Data API...`);
+                    const { google } = require('googleapis');
+                    
+                    const oauth2Client = new google.auth.OAuth2(
+                        process.env.YOUTUBE_CLIENT_ID,
+                        process.env.YOUTUBE_CLIENT_SECRET
+                    );
+                    
+                    oauth2Client.setCredentials(account.session_cookies);
+                    
+                    // Automatically handle saving refreshed tokens
+                    oauth2Client.on('tokens', async (tokens) => {
+                        const updatedTokens = { ...account.session_cookies, ...tokens };
+                        await supabase
+                            .from('social_accounts')
+                            .update({ session_cookies: updatedTokens })
+                            .eq('id', account.id);
+                    });
+                    
+                    const youtube = google.youtube({
+                        version: 'v3',
+                        auth: oauth2Client,
+                    });
+                    
+                    const baseFileName = path.basename(fileToProcess.localPath, path.extname(fileToProcess.localPath));
+                    const finalCaption = (rule.caption_template || '')
+                        .replace('{filename}', baseFileName)
+                        .replace('{hashtags}', rule.hashtags || '');
+                        
+                    const fileSize = fs.statSync(fileToProcess.localPath).size;
+                    
+                    const res = await youtube.videos.insert({
+                        part: ['id', 'snippet', 'status'],
+                        notifySubscribers: false,
+                        requestBody: {
+                            snippet: {
+                                title: finalCaption.substring(0, 100), // Max title length
+                                description: finalCaption,
+                            },
+                            status: {
+                                privacyStatus: 'public',
+                                selfDeclaredMadeForKids: false,
+                            },
+                        },
+                        media: {
+                            body: fs.createReadStream(fileToProcess.localPath),
+                        },
+                    }, {
+                        onUploadProgress: evt => {
+                            const progress = (evt.bytesRead / fileSize) * 100;
+                            console.log(`[youtube] Upload progress: ${Math.round(progress)}%`);
+                        },
+                    });
+                    
+                    await logActivity(profileId, rule.platform, 'success', `Video successfully uploaded via API! (ID: ${res.data.id})`);
+                    await upsertVideoStatus(profileId, fileToProcess.id, fileToProcess.name, rule.platform, 'success', `Video successfully uploaded via API (ID: ${res.data.id})`);
+                } catch (apiErr) {
+                    await logActivity(profileId, rule.platform, 'error', `YouTube API Upload failed: ${apiErr.message}`);
+                    await upsertVideoStatus(profileId, fileToProcess.id, fileToProcess.name, rule.platform, 'failed', `API Upload failed: ${apiErr.message}`);
+                }
+                continue;
+            }
+
+
             const { data: scriptData } = await supabase
                 .from('automation_scripts')
                 .select('script_code')
