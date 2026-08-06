@@ -21,6 +21,9 @@ export default function RecorderPage() {
   const [editingScriptPlatform, setEditingScriptPlatform] = useState<string | null>(null);
   const [editingScriptCode, setEditingScriptCode] = useState<string>("");
   const [savingScript, setSavingScript] = useState(false);
+  
+  const [isAutomationEnabled, setIsAutomationEnabled] = useState(true);
+  const [togglingGlobal, setTogglingGlobal] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -40,10 +43,34 @@ export default function RecorderPage() {
     
     if (scriptsRes.data) {
       const scriptMap: Record<string, string> = {};
-      scriptsRes.data.forEach(s => scriptMap[s.platform] = s.script_code);
+      scriptsRes.data.forEach(s => {
+        if (s.platform === 'global_settings') {
+          setIsAutomationEnabled(s.script_code !== 'false');
+        } else {
+          scriptMap[s.platform] = s.script_code;
+        }
+      });
       setScripts(scriptMap);
     }
     setLoading(false);
+  }
+
+  async function handleToggleGlobalAutomation() {
+    setTogglingGlobal(true);
+    const newValue = !isAutomationEnabled;
+    const { error } = await supabase
+      .from('automation_scripts')
+      .upsert({
+        platform: 'global_settings',
+        script_code: String(newValue)
+      }, { onConflict: 'platform' });
+      
+    if (!error) {
+      setIsAutomationEnabled(newValue);
+    } else {
+      alert("Error toggling global settings: " + error.message);
+    }
+    setTogglingGlobal(false);
   }
 
   async function handleSaveScript(platformId: string) {
@@ -114,6 +141,30 @@ export default function RecorderPage() {
 
   return (
     <div className="flex flex-col gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500 max-w-4xl">
+      <div className={`border border-surface-border backdrop-blur-md rounded-2xl p-6 flex flex-col md:flex-row items-center justify-between gap-6 ${isAutomationEnabled ? 'bg-indigo-500/10 border-indigo-500/30' : 'bg-red-500/10 border-red-500/30'}`}>
+        <div>
+          <h2 className="text-xl font-bold flex items-center gap-3">
+            Master Automation Switch 
+            {isAutomationEnabled ? (
+              <span className="bg-indigo-500/20 text-indigo-400 text-xs px-2.5 py-1 rounded-full uppercase tracking-wider font-semibold">Active</span>
+            ) : (
+              <span className="bg-red-500/20 text-red-400 text-xs px-2.5 py-1 rounded-full uppercase tracking-wider font-semibold">Paused</span>
+            )}
+          </h2>
+          <p className="text-gray-400 text-sm mt-1 max-w-lg">When paused, GitHub Actions will completely ignore all incoming cron pings. Use this to save Actions minutes when you aren't posting.</p>
+        </div>
+        
+        <button 
+          onClick={handleToggleGlobalAutomation}
+          disabled={togglingGlobal}
+          className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors focus:outline-none ${isAutomationEnabled ? 'bg-indigo-500' : 'bg-gray-600'} disabled:opacity-50`}
+        >
+          <span 
+            className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform ${isAutomationEnabled ? 'translate-x-7' : 'translate-x-1'}`}
+          />
+        </button>
+      </div>
+
       <header>
         <h1 className="text-3xl font-bold tracking-tight">Visual Automation Recorder</h1>
         <p className="text-gray-400 mt-1">Record your manual clicks to teach the bot how to upload for each platform.</p>

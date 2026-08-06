@@ -19,6 +19,23 @@ export async function GET(request: Request) {
   const workflow_id = 'worker.yml';
 
   try {
+    const { createClient } = require('@supabase/supabase-js');
+    const supabase = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+    );
+    
+    // Check master switch
+    const { data: globalSettings } = await supabase
+      .from('automation_scripts')
+      .select('script_code')
+      .eq('platform', 'global_settings')
+      .single();
+      
+    if (globalSettings && globalSettings.script_code === 'false') {
+      return NextResponse.json({ success: true, message: 'Automation is globally paused.' });
+    }
+
     const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/actions/workflows/${workflow_id}/dispatches`, {
       method: 'POST',
       headers: {
