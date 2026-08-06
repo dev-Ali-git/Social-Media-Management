@@ -31,18 +31,20 @@ export default function RecorderPage() {
 
   async function fetchData() {
     setLoading(true);
-    const [profilesRes, scriptsRes] = await Promise.all([
+    const [profilesRes, scriptsRes, settingsRes] = await Promise.all([
       supabase.from("profiles").select("*").order("created_at", { ascending: false }),
-      supabase.from("automation_scripts").select("*")
+      supabase.from("automation_scripts").select("*"),
+      supabase.from("system_settings").select("*").eq('key', 'global_automation_paused').single()
     ]);
     
     if (profilesRes.data) {
-      const isPausedProfile = profilesRes.data.find(p => p.name === '_GLOBAL_AUTOMATION_SWITCH_');
-      setIsAutomationEnabled(!isPausedProfile);
-      
-      const validProfiles = profilesRes.data.filter(p => p.name !== '_GLOBAL_AUTOMATION_SWITCH_');
-      setProfiles(validProfiles);
-      if (validProfiles.length > 0) setSelectedProfileId(validProfiles[0].id);
+      setProfiles(profilesRes.data);
+      if (profilesRes.data.length > 0) setSelectedProfileId(profilesRes.data[0].id);
+    }
+    
+    if (settingsRes.data) {
+      // If it's paused, enabled is false
+      setIsAutomationEnabled(settingsRes.data.value !== 'true');
     }
     
     if (scriptsRes.data) {
@@ -57,16 +59,13 @@ export default function RecorderPage() {
 
   async function handleToggleGlobalAutomation() {
     setTogglingGlobal(true);
-    const newValue = !isAutomationEnabled;
-    let error;
+    const newValue = !isAutomationEnabled; // The new value for ENABLED
+    const isPaused = !newValue; // The new value for PAUSED
     
-    if (newValue === false) { // Pausing
-      const res = await supabase.from('profiles').insert({ name: '_GLOBAL_AUTOMATION_SWITCH_' });
-      error = res.error;
-    } else { // Resuming
-      const res = await supabase.from('profiles').delete().eq('name', '_GLOBAL_AUTOMATION_SWITCH_');
-      error = res.error;
-    }
+    const { error } = await supabase
+      .from('system_settings')
+      .update({ value: String(isPaused) })
+      .eq('key', 'global_automation_paused');
       
     if (!error) {
       setIsAutomationEnabled(newValue);
