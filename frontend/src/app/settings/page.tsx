@@ -37,18 +37,18 @@ export default function RecorderPage() {
     ]);
     
     if (profilesRes.data) {
-      setProfiles(profilesRes.data);
-      if (profilesRes.data.length > 0) setSelectedProfileId(profilesRes.data[0].id);
+      const isPausedProfile = profilesRes.data.find(p => p.name === '_GLOBAL_AUTOMATION_SWITCH_');
+      setIsAutomationEnabled(!isPausedProfile);
+      
+      const validProfiles = profilesRes.data.filter(p => p.name !== '_GLOBAL_AUTOMATION_SWITCH_');
+      setProfiles(validProfiles);
+      if (validProfiles.length > 0) setSelectedProfileId(validProfiles[0].id);
     }
     
     if (scriptsRes.data) {
       const scriptMap: Record<string, string> = {};
       scriptsRes.data.forEach(s => {
-        if (s.platform === 'global_settings') {
-          setIsAutomationEnabled(s.script_code !== 'false');
-        } else {
-          scriptMap[s.platform] = s.script_code;
-        }
+        scriptMap[s.platform] = s.script_code;
       });
       setScripts(scriptMap);
     }
@@ -58,12 +58,15 @@ export default function RecorderPage() {
   async function handleToggleGlobalAutomation() {
     setTogglingGlobal(true);
     const newValue = !isAutomationEnabled;
-    const { error } = await supabase
-      .from('automation_scripts')
-      .upsert({
-        platform: 'global_settings',
-        script_code: String(newValue)
-      }, { onConflict: 'platform' });
+    let error;
+    
+    if (newValue === false) { // Pausing
+      const res = await supabase.from('profiles').insert({ name: '_GLOBAL_AUTOMATION_SWITCH_' });
+      error = res.error;
+    } else { // Resuming
+      const res = await supabase.from('profiles').delete().eq('name', '_GLOBAL_AUTOMATION_SWITCH_');
+      error = res.error;
+    }
       
     if (!error) {
       setIsAutomationEnabled(newValue);

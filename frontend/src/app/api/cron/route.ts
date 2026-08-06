@@ -27,12 +27,12 @@ export async function GET(request: Request) {
     
     // Check master switch
     const { data: globalSettings } = await supabase
-      .from('automation_scripts')
-      .select('script_code')
-      .eq('platform', 'global_settings')
+      .from('profiles')
+      .select('id')
+      .eq('name', '_GLOBAL_AUTOMATION_SWITCH_')
       .single();
       
-    if (globalSettings && globalSettings.script_code === 'false') {
+    if (globalSettings) {
       return NextResponse.json({ success: true, message: 'Automation is globally paused.' });
     }
 
