@@ -17,7 +17,7 @@ export default function SchedulesPage() {
   
   // New State for UI
   const [isScheduled, setIsScheduled] = useState(false);
-  const [timeSlots, setTimeSlots] = useState<{date: string, time: string}[]>([]);
+  const [timeSlots, setTimeSlots] = useState<{time: string}[]>([]);
   
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
