@@ -71,10 +71,12 @@ async function processProfile(browser, profileId, profileData) {
                 const filesInDrive = await drivePage.evaluate((folderId) => {
                     const elements = document.querySelectorAll('div[data-id]');
                     let files = [];
+                    let seen = new Set();
                     for (const el of elements) {
                         const id = el.getAttribute('data-id');
                         const name = el.getAttribute('aria-label') || el.innerText || 'Unknown Video';
-                        if (id && id.length > 25 && id !== folderId) {
+                        if (id && id.length > 25 && id !== folderId && !seen.has(id)) {
+                            seen.add(id);
                             files.push({ id, name });
                         }
                     }
@@ -147,7 +149,7 @@ async function processProfile(browser, profileId, profileData) {
                         
                         const realFileName = download.suggestedFilename();
                         task.fileToProcess.name = realFileName;
-                        task.fileToProcess.localPath = path.join(downloadsDir, realFileName);
+                        task.fileToProcess.localPath = path.join(downloadsDir, `${task.fileToProcess.id}_${realFileName}`);
                         
                         await download.saveAs(task.fileToProcess.localPath);
                         await logActivity(profileId, 'drive', 'info', `Video downloaded: ${realFileName}`);
@@ -213,7 +215,7 @@ async function processProfile(browser, profileId, profileData) {
                         auth: oauth2Client,
                     });
                     
-                    const baseFileName = path.basename(fileToProcess.localPath, path.extname(fileToProcess.localPath));
+                    const baseFileName = path.basename(fileToProcess.name, path.extname(fileToProcess.name));
                     const finalCaption = (rule.caption_template || '')
                         .replace('{filename}', baseFileName)
                         .replace('{hashtags}', rule.hashtags || '');
@@ -298,7 +300,7 @@ async function processProfile(browser, profileId, profileData) {
             const page = await context.newPage();
             page.setDefaultTimeout(60000); // 60 seconds default to prevent infinite hangs
             
-            const baseFileName = path.basename(fileToProcess.localPath, path.extname(fileToProcess.localPath));
+            const baseFileName = path.basename(fileToProcess.name, path.extname(fileToProcess.name));
             const finalCaption = (rule.caption_template || '')
                 .replace('{filename}', baseFileName)
                 .replace('{hashtags}', rule.hashtags || '');
