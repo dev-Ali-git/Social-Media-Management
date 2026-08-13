@@ -104,10 +104,10 @@ async function processProfile(browser, profileId, profileData) {
                     for (const rule of profileData.rules) {
                         const record = history.find(h => h.file_id === file.id && h.platform === rule.platform);
                         if (!record || record.status !== 'success') {
-                            const max = rule.max_videos_per_day || 1;
+                            const max = rule.allowedUploads;
                             const current = todayUploads[rule.platform] || 0;
                             
-                            if (current < max || rule.matchedSlot) {
+                            if (current < max) {
                                 pendingPlatforms.push(rule);
                                 todayUploads[rule.platform] = current + 1;
                             }
@@ -411,21 +411,26 @@ async function startDaemon() {
 
         const profilesMap = {};
         for (const rule of rules) {
+            let allowedUploads = rule.max_videos_per_day || 1;
             const isScheduled = Array.isArray(rule.time_slots) && rule.time_slots.length > 0;
-            let matchedSlot = null;
             
             if (isScheduled) {
                 const now = new Date();
+                const currentTotalMinutes = now.getHours() * 60 + now.getMinutes();
+                allowedUploads = 0;
+                
                 for (const slot of rule.time_slots) {
-                    if (slot && slot.date && slot.time) {
-                        const scheduledDate = new Date(`${slot.date}T${slot.time}:00`);
-                        if (now >= scheduledDate) {
-                            matchedSlot = slot;
-                            break;
+                    if (slot && slot.time) {
+                        const [slotHour, slotMin] = slot.time.split(':').map(Number);
+                        if (currentTotalMinutes >= (slotHour * 60 + slotMin)) {
+                            allowedUploads++;
                         }
                     }
                 }
-                if (!matchedSlot) {
+                
+                allowedUploads = Math.min(allowedUploads, rule.max_videos_per_day || 1);
+                
+                if (allowedUploads === 0) {
                     continue; 
                 }
             }
@@ -437,7 +442,7 @@ async function startDaemon() {
                     rules: []
                 };
             }
-            profilesMap[rule.profile_id].rules.push({ ...rule, matchedSlot });
+            profilesMap[rule.profile_id].rules.push({ ...rule, allowedUploads });
         }
 
         const allProfiles = Object.entries(profilesMap);

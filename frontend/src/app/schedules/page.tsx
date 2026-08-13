@@ -240,22 +240,11 @@ export default function SchedulesPage() {
                               <span className="text-sm font-medium text-indigo-300 w-16">Video {i + 1}</span>
                               <div className="flex flex-1 gap-2 w-full">
                                 <input 
-                                  type="date"
-                                  value={timeSlots[i]?.date || ''}
-                                  onChange={(e) => {
-                                    const newSlots = [...timeSlots];
-                                    if (!newSlots[i]) newSlots[i] = { date: '', time: '' };
-                                    newSlots[i].date = e.target.value;
-                                    setTimeSlots(newSlots);
-                                  }}
-                                  className="w-full bg-surface border border-surface-border rounded-lg px-3 py-1.5 focus:outline-none focus:border-indigo-500 transition-colors text-sm text-gray-200"
-                                />
-                                <input 
                                   type="time"
                                   value={timeSlots[i]?.time || ''}
                                   onChange={(e) => {
                                     const newSlots = [...timeSlots];
-                                    if (!newSlots[i]) newSlots[i] = { date: '', time: '' };
+                                    if (!newSlots[i]) newSlots[i] = { time: '' };
                                     newSlots[i].time = e.target.value;
                                     setTimeSlots(newSlots);
                                   }}
