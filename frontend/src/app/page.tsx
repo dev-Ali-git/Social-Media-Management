@@ -68,18 +68,9 @@ export default function Home() {
       
     if (allLogs) {
       setLogs(allLogs);
-      
-      const total = allLogs.filter(l => l.status === 'success' && l.platform !== 'drive' && l.platform !== 'system').length;
       const errors = allLogs.filter(l => l.status === 'error').length;
       
-      // Calculate this month
-      const now = new Date();
-      const thisMonth = allLogs.filter(l => {
-        const d = new Date(l.created_at);
-        return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear() && l.status === 'success' && l.platform !== 'drive' && l.platform !== 'system';
-      }).length;
-      
-      setStats({ total, month: thisMonth, errors });
+      setStats(prev => ({ ...prev, errors }));
     }
   }
 
@@ -97,6 +88,35 @@ export default function Home() {
         return acc;
       }, {});
       setVideoHistory(Object.entries(grouped));
+      
+      // Calculate Total and Month based on unique videos (must have at least one success)
+      let uniqueTotal = 0;
+      let uniqueMonth = 0;
+      const now = new Date();
+      
+      Object.values(grouped).forEach((platforms: any) => {
+          let isSuccess = false;
+          let latestSuccessDate: Date | null = null;
+          
+          Object.values(platforms).forEach((p: any) => {
+              if (p.status === 'success') {
+                  isSuccess = true;
+                  const pd = new Date(p.date);
+                  if (!latestSuccessDate || pd > latestSuccessDate) {
+                      latestSuccessDate = pd;
+                  }
+              }
+          });
+          
+          if (isSuccess) {
+              uniqueTotal++;
+              if (latestSuccessDate && latestSuccessDate.getMonth() === now.getMonth() && latestSuccessDate.getFullYear() === now.getFullYear()) {
+                  uniqueMonth++;
+              }
+          }
+      });
+      
+      setStats(prev => ({ ...prev, total: uniqueTotal, month: uniqueMonth }));
     }
   }
 
