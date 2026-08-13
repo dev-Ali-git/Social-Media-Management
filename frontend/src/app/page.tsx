@@ -98,7 +98,7 @@ export default function Home() {
           let isSuccess = false;
           let latestSuccessDate: Date | null = null;
           
-          Object.values(platforms).forEach((p: any) => {
+          for (const p of Object.values(platforms) as any[]) {
               if (p.status === 'success') {
                   isSuccess = true;
                   const pd = new Date(p.date);
@@ -106,11 +106,11 @@ export default function Home() {
                       latestSuccessDate = pd;
                   }
               }
-          });
+          }
           
-          if (isSuccess) {
+          if (isSuccess && latestSuccessDate) {
               uniqueTotal++;
-              if (latestSuccessDate && latestSuccessDate.getMonth() === now.getMonth() && latestSuccessDate.getFullYear() === now.getFullYear()) {
+              if (latestSuccessDate.getMonth() === now.getMonth() && latestSuccessDate.getFullYear() === now.getFullYear()) {
                   uniqueMonth++;
               }
           }
