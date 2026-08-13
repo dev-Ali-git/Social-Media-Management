@@ -55,8 +55,7 @@ async function processProfile(browser, profileId, profileData) {
             .eq('folder_type', 'source')
             .single();
         
-        let fileToProcess = null;
-        let platformsToUpload = [];
+        let uploadTasks = [];
         
         if (driveFolder && driveFolder.folder_url) {
             const driveContext = await browser.newContext({ acceptDownloads: true });
@@ -88,25 +87,49 @@ async function processProfile(browser, profileId, profileData) {
                     .eq('profile_id', profileId);
                     
                 const history = uploadHistory || [];
+                
+                const todayStart = new Date();
+                todayStart.setHours(0, 0, 0, 0);
+                const todayUploads = {};
+                for (const h of history) {
+                    if (h.status === 'success' && new Date(h.created_at) >= todayStart) {
+                        todayUploads[h.platform] = (todayUploads[h.platform] || 0) + 1;
+                    }
+                }
 
                 for (const file of filesInDrive) {
                     let pendingPlatforms = [];
                     for (const rule of profileData.rules) {
                         const record = history.find(h => h.file_id === file.id && h.platform === rule.platform);
                         if (!record || record.status !== 'success') {
-                            pendingPlatforms.push(rule);
+                            const max = rule.max_videos_per_day || 1;
+                            const current = todayUploads[rule.platform] || 0;
+                            
+                            if (current < max || rule.matchedSlot) {
+                                pendingPlatforms.push(rule);
+                                todayUploads[rule.platform] = current + 1;
+                            }
                         }
                     }
                     
                     if (pendingPlatforms.length > 0) {
-                        fileToProcess = file;
-                        platformsToUpload = pendingPlatforms;
-                        break; 
+                        uploadTasks.push({ fileToProcess: file, platformsToUpload: pendingPlatforms });
                     }
+                    
+                    let allReached = true;
+                    for (const rule of profileData.rules) {
+                        const max = rule.max_videos_per_day || 1;
+                        const current = todayUploads[rule.platform] || 0;
+                        if (current < max || rule.matchedSlot) {
+                            allReached = false;
+                            break;
+                        }
+                    }
+                    if (allReached) break;
                 }
                 
-                if (fileToProcess) {
-                    const downloadUrl = `https://drive.google.com/uc?export=download&id=${fileToProcess.id}`;
+                for (const task of uploadTasks) {
+                    const downloadUrl = `https://drive.google.com/uc?export=download&id=${task.fileToProcess.id}`;
                     const downloadPromise = drivePage.waitForEvent('download', { timeout: 120000 }).catch(() => null);
                     await drivePage.goto(downloadUrl).catch(e => {
                         if (!e.message.includes('ERR_ABORTED')) {}
@@ -123,13 +146,13 @@ async function processProfile(browser, profileId, profileData) {
                         if (!fs.existsSync(downloadsDir)) fs.mkdirSync(downloadsDir);
                         
                         const realFileName = download.suggestedFilename();
-                        fileToProcess.name = realFileName;
-                        fileToProcess.localPath = path.join(downloadsDir, realFileName);
+                        task.fileToProcess.name = realFileName;
+                        task.fileToProcess.localPath = path.join(downloadsDir, realFileName);
                         
-                        await download.saveAs(fileToProcess.localPath);
+                        await download.saveAs(task.fileToProcess.localPath);
                         await logActivity(profileId, 'drive', 'info', `Video downloaded: ${realFileName}`);
                     } else {
-                        fileToProcess = null;
+                        task.fileToProcess.localPath = null;
                     }
                 }
             } catch (e) {
@@ -138,14 +161,20 @@ async function processProfile(browser, profileId, profileData) {
             await driveContext.close();
         }
 
-        if (!fileToProcess || !fileToProcess.localPath) {
-            return;
-        }
+        // ==========================================
+        // PHASE 2: UPLOAD TO PENDING PLATFORMS
+        // ==========================================
+        for (const task of uploadTasks) {
+            const { fileToProcess, platformsToUpload } = task;
+            
+            if (!fileToProcess || !fileToProcess.localPath) {
+                continue;
+            }
 
         // ==========================================
         // PHASE 2: UPLOAD TO PENDING PLATFORMS
         // ==========================================
-        for (const rule of platformsToUpload) {
+            for (const rule of platformsToUpload) {
             const { data: account } = await supabase
                 .from('social_accounts')
                 .select('*')
@@ -338,6 +367,7 @@ async function processProfile(browser, profileId, profileData) {
         if (fileToProcess.localPath && fs.existsSync(fileToProcess.localPath)) {
             fs.unlinkSync(fileToProcess.localPath);
         }
+        } // End of uploadTasks loop
 
     } catch (err) {
         await logActivity(profileId, 'system', 'error', `Profile crash: ${err.message}`);
