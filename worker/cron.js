@@ -311,18 +311,20 @@ async function processProfile(browser, profileId, profileData) {
                     finalMacroCode = finalMacroCode.replace(/\.(setInputFiles|setFiles)\(\[?['`"].*?['`"]\]?\)/g, `.$1(${JSON.stringify(fileToProcess.localPath)})`);
                 }
                 
-                // Safely replace quote-wrapped tokens first
-                finalMacroCode = finalMacroCode.replace(/['"`]OMNIPOST_CAPTION['"`]/g, JSON.stringify(finalCaption));
-                finalMacroCode = finalMacroCode.replace(/['"`]OMNIPOST_PROFILE_NAME['"`]/g, JSON.stringify(profileData.profile_name));
+                // Helper to escape strings so they can be injected into ANY existing quote type safely
+                const escapeForInjection = (str) => {
+                    return (str || '')
+                        .replace(/\\/g, '\\\\')
+                        .replace(/'/g, "\\'")
+                        .replace(/"/g, '\\"')
+                        .replace(/`/g, '\\`')
+                        .replace(/\n/g, '\\n');
+                };
+
+                finalMacroCode = finalMacroCode.replace(/OMNIPOST_CAPTION/g, escapeForInjection(finalCaption));
+                finalMacroCode = finalMacroCode.replace(/OMNIPOST_PROFILE_NAME/g, escapeForInjection(profileData.profile_name));
                 if (account.username) {
-                    finalMacroCode = finalMacroCode.replace(/['"`]OMNIPOST_USERNAME['"`]/g, JSON.stringify(account.username));
-                }
-                
-                // Fallback for non-quote-wrapped tokens
-                finalMacroCode = finalMacroCode.replace(/OMNIPOST_CAPTION/g, JSON.stringify(finalCaption));
-                finalMacroCode = finalMacroCode.replace(/OMNIPOST_PROFILE_NAME/g, JSON.stringify(profileData.profile_name));
-                if (account.username) {
-                    finalMacroCode = finalMacroCode.replace(/OMNIPOST_USERNAME/g, JSON.stringify(account.username));
+                    finalMacroCode = finalMacroCode.replace(/OMNIPOST_USERNAME/g, escapeForInjection(account.username));
                 }
 
                 const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
