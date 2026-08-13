@@ -310,11 +310,19 @@ async function processProfile(browser, profileId, profileData) {
                 if (fileToProcess.localPath) {
                     finalMacroCode = finalMacroCode.replace(/\.(setInputFiles|setFiles)\(\[?['`"].*?['`"]\]?\)/g, `.$1(${JSON.stringify(fileToProcess.localPath)})`);
                 }
-                finalMacroCode = finalMacroCode.replace(/OMNIPOST_CAPTION/g, finalCaption);
                 
-                finalMacroCode = finalMacroCode.replace(/OMNIPOST_PROFILE_NAME/g, profileData.profile_name);
+                // Safely replace quote-wrapped tokens first
+                finalMacroCode = finalMacroCode.replace(/['"`]OMNIPOST_CAPTION['"`]/g, JSON.stringify(finalCaption));
+                finalMacroCode = finalMacroCode.replace(/['"`]OMNIPOST_PROFILE_NAME['"`]/g, JSON.stringify(profileData.profile_name));
                 if (account.username) {
-                    finalMacroCode = finalMacroCode.replace(/OMNIPOST_USERNAME/g, account.username);
+                    finalMacroCode = finalMacroCode.replace(/['"`]OMNIPOST_USERNAME['"`]/g, JSON.stringify(account.username));
+                }
+                
+                // Fallback for non-quote-wrapped tokens
+                finalMacroCode = finalMacroCode.replace(/OMNIPOST_CAPTION/g, JSON.stringify(finalCaption));
+                finalMacroCode = finalMacroCode.replace(/OMNIPOST_PROFILE_NAME/g, JSON.stringify(profileData.profile_name));
+                if (account.username) {
+                    finalMacroCode = finalMacroCode.replace(/OMNIPOST_USERNAME/g, JSON.stringify(account.username));
                 }
 
                 const AsyncFunction = Object.getPrototypeOf(async function(){}).constructor;
