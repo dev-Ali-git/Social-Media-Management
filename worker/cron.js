@@ -220,6 +220,10 @@ async function processProfile(browser, profileId, profileData) {
                         .replace('{filename}', baseFileName)
                         .replace('{hashtags}', rule.hashtags || '');
                         
+                    const finalDescription = (rule.youtube_description || '')
+                        .replace('{filename}', baseFileName)
+                        .replace('{hashtags}', rule.hashtags || '');
+                        
                     const fileSize = fs.statSync(fileToProcess.localPath).size;
                     
                     const res = await youtube.videos.insert({
@@ -228,7 +232,7 @@ async function processProfile(browser, profileId, profileData) {
                         requestBody: {
                             snippet: {
                                 title: finalCaption.substring(0, 100), // Max title length
-                                description: finalCaption,
+                                description: finalDescription || finalCaption,
                             },
                             status: {
                                 privacyStatus: 'public',

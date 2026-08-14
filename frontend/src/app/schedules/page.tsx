@@ -12,8 +12,9 @@ export default function SchedulesPage() {
   const [saving, setSaving] = useState(false);
   
   const [captionTemplate, setCaptionTemplate] = useState("Check out this video! {hashtags}");
-  const [hashtags, setHashtags] = useState("#video #viral");
-  const [maxVideos, setMaxVideos] = useState(2);
+  const [hashtags, setHashtags] = useState("");
+  const [youtubeDescription, setYoutubeDescription] = useState("");
+  const [maxVideos, setMaxVideos] = useState(1);
   
   // New State for UI
   const [isScheduled, setIsScheduled] = useState(false);
@@ -66,7 +67,8 @@ export default function SchedulesPage() {
     if (data) {
       setCaptionTemplate(data.caption_template || "");
       setHashtags(data.hashtags || "");
-      setMaxVideos(data.max_videos_per_day || 2);
+      setYoutubeDescription(data.youtube_description || "");
+      setMaxVideos(data.max_videos_per_day || 1);
       
       let parsedTimes: {date: string, time: string}[] = [];
       try {
@@ -85,9 +87,10 @@ export default function SchedulesPage() {
       setIsScheduled(parsedTimes.length > 0);
     } else {
       // Defaults
-      setCaptionTemplate("Check out this video! {hashtags}");
-      setHashtags("#video #viral");
-      setMaxVideos(2);
+      setCaptionTemplate("");
+      setHashtags("");
+      setYoutubeDescription("");
+      setMaxVideos(1);
       setTimeSlots([]);
       setIsScheduled(false);
     }
@@ -108,6 +111,7 @@ export default function SchedulesPage() {
         platform: selectedPlatform,
         caption_template: captionTemplate,
         hashtags: hashtags,
+        youtube_description: selectedPlatform === 'youtube' ? youtubeDescription : null,
         max_videos_per_day: maxVideos,
         time_slots: finalTimeSlots
       }, { onConflict: "profile_id,platform" });
@@ -177,7 +181,9 @@ export default function SchedulesPage() {
              
              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                   <label className="text-sm text-gray-400 mb-1 block">Caption Template</label>
+                   <label className="text-sm text-gray-400 mb-1 block">
+                     {selectedPlatform === 'youtube' ? 'Video Title Template' : 'Caption Template'}
+                   </label>
                    <p className="text-xs text-gray-500 mb-2">Variables: {'{filename}'}, {'{hashtags}'}</p>
                    <textarea 
                      value={captionTemplate}
@@ -187,6 +193,19 @@ export default function SchedulesPage() {
                    />
                 </div>
                 
+                {selectedPlatform === 'youtube' && (
+                 <div className="md:col-span-2">
+                    <label className="text-sm text-gray-400 mb-1 block">Description Template</label>
+                    <p className="text-xs text-gray-500 mb-2">Variables: {'{filename}'}, {'{hashtags}'}</p>
+                    <textarea 
+                      value={youtubeDescription}
+                      onChange={(e) => setYoutubeDescription(e.target.value)}
+                      rows={6}
+                      className="w-full bg-black/20 border border-surface-border rounded-xl px-4 py-2.5 focus:outline-none focus:border-indigo-500 transition-colors resize-none"
+                    />
+                 </div>
+                 )}
+
                 <div>
                    <label className="text-sm text-gray-400 mb-1 flex items-center gap-1"><Hash className="w-4 h-4"/> Default Hashtags</label>
                    <p className="text-xs text-gray-500 mb-2">Appended via {'{hashtags}'} variable</p>
