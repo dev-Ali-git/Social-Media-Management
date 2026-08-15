@@ -1,4 +1,4 @@
-require('dotenv').config();
+require('dotenv').config({ path: require('path').resolve(__dirname, '.env') });
 const { chromium } = require('playwright');
 const { createClient } = require('@supabase/supabase-js');
 const path = require('path');
