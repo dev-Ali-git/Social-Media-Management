@@ -210,6 +210,9 @@ async function processProfile(browser, profileId, profileData) {
                             .eq('id', account.id);
                     });
                     
+                    // Pre-emptively refresh token if expired to prevent stream corruption during axios retry
+                    await oauth2Client.getAccessToken();
+                    
                     const youtube = google.youtube({
                         version: 'v3',
                         auth: oauth2Client,
