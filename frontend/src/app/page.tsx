@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ArrowUpRight, CheckCircle2, Clock, XCircle, FileVideo, HardDrive, Loader2, Power, AlertCircle, Info, Trash2 } from "lucide-react";
+import { ArrowUpRight, CheckCircle2, Clock, XCircle, FileVideo, HardDrive, Loader2, Power, AlertCircle, Info, Trash2, Download } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import * as XLSX from "xlsx";
 
 export default function Home() {
   const [profiles, setProfiles] = useState<any[]>([]);
-  const [selectedProfile, setSelectedProfile] = useState<any>(null);
+  const [selectedProfile, setSelectedProfile] = useState<any | 'GLOBAL'>('GLOBAL');
   const [logs, setLogs] = useState<any[]>([]);
   const [stats, setStats] = useState({ total: 0, month: 0, errors: 0 });
   const [loading, setLoading] = useState(true);
@@ -20,23 +21,40 @@ export default function Home() {
   const [showVideoHistory, setShowVideoHistory] = useState(false);
   const [videoHistory, setVideoHistory] = useState<[string, any][]>([]);
 
+  const [globalHistory, setGlobalHistory] = useState<any[]>([]);
+  const [isExporting, setIsExporting] = useState(false);
+
   useEffect(() => {
     fetchProfiles();
   }, []);
 
   useEffect(() => {
-    if (selectedProfile) {
+    if (selectedProfile && selectedProfile !== 'GLOBAL') {
       fetchLogs(selectedProfile.id);
       fetchVideoHistory(selectedProfile.id);
+    } else if (selectedProfile === 'GLOBAL') {
+      fetchGlobalData();
     }
   }, [selectedProfile]);
+
+  async function fetchGlobalData() {
+    const { data } = await supabase
+      .from("video_uploads")
+      .select("*, profiles(name)")
+      .order("created_at", { ascending: false })
+      .limit(100);
+      
+    if (data) {
+      setGlobalHistory(data);
+    }
+  }
 
   async function fetchProfiles() {
     setLoading(true);
     const { data } = await supabase.from("profiles").select("*").order("created_at", { ascending: false });
     if (data && data.length > 0) {
       setProfiles(data);
-      if (!selectedProfile) setSelectedProfile(data[0]);
+      if (!selectedProfile) setSelectedProfile('GLOBAL');
     }
     setLoading(false);
   }
@@ -87,7 +105,6 @@ export default function Home() {
         acc[curr.file_name][curr.platform] = { status: curr.status, error: curr.error_message, date: curr.created_at };
         return acc;
       }, {});
-      setVideoHistory(Object.entries(grouped));
       
       // Calculate Total and Month based on unique videos (must have at least one success)
       let uniqueTotal = 0;
@@ -99,7 +116,7 @@ export default function Home() {
           let latestSuccessDate: Date | null = null;
           
           for (const p of Object.values(platforms) as any[]) {
-              if (p.status === 'success') {
+              if (p.status.startsWith('success')) {
                   isSuccess = true;
                   const pd = new Date(p.date);
                   if (!latestSuccessDate || pd > latestSuccessDate) {
@@ -117,6 +134,14 @@ export default function Home() {
       });
       
       setStats(prev => ({ ...prev, total: uniqueTotal, month: uniqueMonth }));
+      
+      // Filter out completely hidden history records from the UI list
+      const visibleHistory = Object.entries(grouped).filter(([_, platforms]: any) => {
+          const pVals = Object.values(platforms) as any[];
+          return !pVals.every(p => p.status.endsWith('_hidden'));
+      });
+      
+      setVideoHistory(visibleHistory);
     }
   }
 
@@ -124,16 +149,21 @@ export default function Home() {
     if (!selectedProfile) return;
     if (!confirm(`Are you sure you want to delete history for "${fileName}"?`)) return;
     
-    const { error } = await supabase
+    const { data: records } = await supabase
       .from("video_uploads")
-      .delete()
+      .select("id, status")
       .eq("profile_id", selectedProfile.id)
       .eq("file_name", fileName);
       
-    if (!error) {
+    if (records) {
+      for (const record of records) {
+        if (!record.status.endsWith('_hidden')) {
+           await supabase.from("video_uploads").update({ status: record.status + '_hidden' }).eq('id', record.id);
+        }
+      }
       setVideoHistory(videoHistory.filter(([name]) => name !== fileName));
     } else {
-      alert("Error deleting record: " + error.message);
+      alert("Error deleting record.");
     }
   }
 
@@ -182,11 +212,74 @@ export default function Home() {
   }
 
   async function clearLogs() {
-    if (!selectedProfile) return;
+    if (!selectedProfile || selectedProfile === 'GLOBAL') return;
     if (!confirm("Are you sure you want to clear all logs for this profile?")) return;
     await supabase.from("activity_logs").delete().eq("profile_id", selectedProfile.id);
     setLogs([]);
     setStats({ total: 0, month: 0, errors: 0 });
+  }
+
+  async function exportGlobalHistoryToExcel() {
+    setIsExporting(true);
+    try {
+      // Fetch all history across all profiles
+      const { data } = await supabase
+        .from("video_uploads")
+        .select("*, profiles(name)")
+        .order("created_at", { ascending: false });
+
+      if (!data || data.length === 0) {
+        alert("No history data to export.");
+        setIsExporting(false);
+        return;
+      }
+
+      // Group by profile name
+      const groupedByProfile: Record<string, any[]> = {};
+      data.forEach(item => {
+        const pName = item.profiles?.name || 'Unknown Profile';
+        if (!groupedByProfile[pName]) {
+          groupedByProfile[pName] = [];
+        }
+        // Exclude hidden suffix in export for cleaner data
+        const displayStatus = item.status.replace('_hidden', '');
+        
+        groupedByProfile[pName].push({
+          "Date": new Date(item.created_at).toLocaleString(),
+          "Video Name": item.file_name,
+          "Platform": item.platform.toUpperCase(),
+          "Status": displayStatus.toUpperCase(),
+          "Error Message": item.error_message || ""
+        });
+      });
+
+      // Create a new workbook
+      const wb = XLSX.utils.book_new();
+
+      // Create a sheet for each profile
+      Object.keys(groupedByProfile).forEach(profileName => {
+        const ws = XLSX.utils.json_to_sheet(groupedByProfile[profileName]);
+        
+        // Auto-size columns slightly
+        ws['!cols'] = [
+          { wch: 20 }, // Date
+          { wch: 50 }, // Video Name
+          { wch: 15 }, // Platform
+          { wch: 15 }, // Status
+          { wch: 40 }  // Error Message
+        ];
+
+        // Ensure sheet name is valid length (Excel limits to 31 chars)
+        const safeSheetName = profileName.substring(0, 31).replace(/[\[\]\*\\\/\?]/g, '');
+        XLSX.utils.book_append_sheet(wb, ws, safeSheetName || 'Sheet');
+      });
+
+      // Write and download
+      XLSX.writeFile(wb, `OmniPost_Global_History.xlsx`);
+    } catch (e: any) {
+      alert("Failed to export data: " + e.message);
+    }
+    setIsExporting(false);
   }
 
   if (loading && profiles.length === 0) {
@@ -208,6 +301,19 @@ export default function Home() {
         <div className="lg:col-span-1 border border-surface-border bg-surface backdrop-blur-md rounded-2xl p-4 flex flex-col gap-2">
           <h2 className="text-lg font-semibold px-2 mb-2 text-gray-200">Your Profiles</h2>
           <div className="flex-1 overflow-y-auto max-h-[300px] lg:max-h-[500px] flex flex-col gap-2">
+            <button
+              onClick={() => setSelectedProfile('GLOBAL')}
+              className={`text-left px-4 py-3 rounded-xl transition-all flex items-center justify-between group flex-shrink-0 ${
+                selectedProfile === 'GLOBAL' 
+                  ? 'bg-indigo-500/10 border-indigo-500/30 border text-white' 
+                  : 'border-transparent border hover:bg-white/5 text-gray-400 hover:text-gray-200'
+              }`}
+            >
+              <span className="font-medium truncate pr-2">🌍 Global Overview</span>
+            </button>
+            
+            <div className="h-px bg-surface-border my-2" />
+            
             {profiles.length === 0 ? (
               <p className="text-sm text-gray-500 px-2">No profiles found.</p>
             ) : (
@@ -248,8 +354,88 @@ export default function Home() {
           </div>
         </div>
 
+        {/* Global Overview Data */}
+        {selectedProfile === 'GLOBAL' && (
+          <div className="lg:col-span-3 flex flex-col gap-6">
+            <div className="border border-surface-border bg-surface backdrop-blur-md rounded-2xl p-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 relative overflow-hidden">
+               <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-indigo-500/5 to-purple-500/10 blur-3xl rounded-full pointer-events-none"></div>
+               <div className="relative z-10">
+                 <h2 className="text-2xl font-bold text-white flex items-center gap-3">🌍 Global Overview</h2>
+                 <p className="text-sm text-gray-400 mt-1">Aggregate engine status and global upload history across all profiles.</p>
+               </div>
+               <button 
+                 onClick={exportGlobalHistoryToExcel}
+                 disabled={isExporting}
+                 className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-medium transition-all bg-green-500/10 text-green-400 border border-green-500/20 hover:bg-green-500/20 relative z-10 disabled:opacity-50"
+               >
+                 {isExporting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
+                 Export All History
+               </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {profiles.map(p => (
+                <div key={p.id} className="border border-surface-border bg-black/20 rounded-xl p-4 flex flex-col gap-2 relative">
+                  <div className="flex justify-between items-center">
+                    <span className="font-semibold text-gray-200">{p.name}</span>
+                    <div className={`w-2 h-2 rounded-full ${p.is_active !== false ? 'bg-green-500' : 'bg-red-500/50'}`} />
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    Status: {p.is_active !== false ? 'Active' : 'Paused'}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="border border-surface-border bg-surface backdrop-blur-md rounded-2xl overflow-hidden flex flex-col h-[500px]">
+              <div className="p-5 border-b border-surface-border bg-black/20 flex justify-between items-center">
+                <h3 className="font-semibold text-gray-200 flex items-center gap-2"><Clock className="w-4 h-4 text-indigo-400"/> Recent Global Uploads</h3>
+              </div>
+              <div className="p-0 overflow-y-auto flex-1">
+                {globalHistory.length === 0 ? (
+                  <div className="text-center py-12 text-gray-500 text-sm">No recent uploads found.</div>
+                ) : (
+                  <table className="w-full text-left border-collapse text-sm">
+                    <thead>
+                      <tr className="bg-black/40 border-b border-surface-border">
+                        <th className="p-3 font-medium text-gray-400">Date</th>
+                        <th className="p-3 font-medium text-gray-400">Profile</th>
+                        <th className="p-3 font-medium text-gray-400">Platform</th>
+                        <th className="p-3 font-medium text-gray-400">Video</th>
+                        <th className="p-3 font-medium text-gray-400">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-surface-border">
+                      {globalHistory.map((item, i) => (
+                        <tr key={i} className="hover:bg-white/5">
+                          <td className="p-3 text-gray-400 whitespace-nowrap">{new Date(item.created_at).toLocaleTimeString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}</td>
+                          <td className="p-3 font-medium text-indigo-300">{item.profiles?.name || 'Unknown'}</td>
+                          <td className="p-3 text-gray-300 capitalize">{item.platform}</td>
+                          <td className="p-3 text-gray-300 truncate max-w-[200px]" title={item.file_name}>{item.file_name}</td>
+                          <td className="p-3">
+                            {item.status.startsWith('success') ? (
+                              <span className="text-green-400 flex items-center gap-1"><CheckCircle2 className="w-4 h-4"/> Success</span>
+                            ) : item.status.startsWith('failed') ? (
+                              <span className="text-red-400 flex items-center gap-1 group relative cursor-help">
+                                <XCircle className="w-4 h-4"/> Failed
+                                <div className="absolute bottom-full left-0 mb-2 hidden group-hover:block w-48 p-2 bg-red-950/90 text-red-200 text-xs rounded border border-red-900 z-10 whitespace-normal">{item.error_message || 'Error'}</div>
+                              </span>
+                            ) : (
+                              <span className="text-gray-400">{item.status.replace('_hidden', '')}</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Profile Data */}
-        {selectedProfile && (
+        {selectedProfile && selectedProfile !== 'GLOBAL' && (
           <div className="lg:col-span-3 flex flex-col gap-6">
             
             <div className="border border-surface-border bg-surface backdrop-blur-md rounded-2xl p-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 relative overflow-hidden">
