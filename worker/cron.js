@@ -4,6 +4,16 @@ const { createClient } = require('@supabase/supabase-js');
 const path = require('path');
 const fs = require('fs');
 
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('[SYSTEM ERROR] Unhandled Rejection at:', promise, 'reason:', reason);
+    // Prevent daemon crash from floating macro promises (like un-awaited waitForEvent)
+});
+
+process.on('uncaughtException', (err) => {
+    console.error('[SYSTEM ERROR] Uncaught Exception:', err);
+});
+
+
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_ANON_KEY;
 
@@ -255,8 +265,10 @@ async function processProfile(browser, profileId, profileData) {
                     await logActivity(profileId, rule.platform, 'success', `Video successfully uploaded via API! (ID: ${res.data.id})`);
                     await upsertVideoStatus(profileId, fileToProcess.id, fileToProcess.name, rule.platform, 'success', `Video successfully uploaded via API (ID: ${res.data.id})`);
                 } catch (apiErr) {
+                    const errorDetail = apiErr.response && apiErr.response.data ? JSON.stringify(apiErr.response.data) : apiErr.message;
+                    console.error(`[ERROR] youtube detail: ${errorDetail}`);
                     await logActivity(profileId, rule.platform, 'error', `YouTube API Upload failed: ${apiErr.message}`);
-                    await upsertVideoStatus(profileId, fileToProcess.id, fileToProcess.name, rule.platform, 'failed', `API Upload failed: ${apiErr.message}`);
+                    await upsertVideoStatus(profileId, fileToProcess.id, fileToProcess.name, rule.platform, 'failed', `YouTube API Upload failed: ${apiErr.message}`);
                 }
                 continue;
             }
