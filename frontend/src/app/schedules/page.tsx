@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Loader2, Save, CalendarClock, Hash, Clock, ChevronDown, Check, Zap } from "lucide-react";
+import { Loader2, Save, CalendarClock, Hash, Clock, ChevronDown, Check, Zap, Globe } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 
 export default function SchedulesPage() {
@@ -10,6 +10,7 @@ export default function SchedulesPage() {
   const [selectedPlatform, setSelectedPlatform] = useState("youtube");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [applyingMode, setApplyingMode] = useState(false);
   
   const [captionTemplate, setCaptionTemplate] = useState("Check out this video! {hashtags}");
   const [hashtags, setHashtags] = useState("");
@@ -124,6 +125,40 @@ export default function SchedulesPage() {
     }
   }
 
+  async function handleApplyModeToAll() {
+    if (!confirm(`Apply the current ${isScheduled ? 'Scheduled' : 'Immediate'} mode (and time slots) to ALL profiles for ${selectedPlatform}?`)) return;
+    
+    setApplyingMode(true);
+    const finalTimeSlots = isScheduled ? timeSlots : [];
+    
+    const { data: existingRules } = await supabase
+        .from('publishing_rules')
+        .select('*')
+        .eq('platform', selectedPlatform);
+        
+    const upserts = profiles.map(p => {
+        const existing = existingRules?.find(r => r.profile_id === p.id);
+        return {
+            profile_id: p.id,
+            platform: selectedPlatform,
+            caption_template: existing?.caption_template || "",
+            hashtags: existing?.hashtags || "",
+            youtube_description: existing?.youtube_description || null,
+            max_videos_per_day: existing?.max_videos_per_day || 1,
+            time_slots: finalTimeSlots
+        };
+    });
+    
+    const { error } = await supabase.from('publishing_rules').upsert(upserts, { onConflict: 'profile_id,platform' });
+    setApplyingMode(false);
+    
+    if (error) {
+        alert("Error applying to all profiles: " + error.message);
+    } else {
+        alert(`Successfully applied publishing mode to all profiles for ${selectedPlatform}!`);
+    }
+  }
+
   if (loading) {
     return <div className="flex h-full items-center justify-center"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>;
   }
@@ -232,7 +267,18 @@ export default function SchedulesPage() {
                 </div>
                 
                  <div>
-                   <label className="text-sm text-gray-400 mb-1 block">Publishing Mode</label>
+                   <div className="flex items-center justify-between mb-1">
+                     <label className="text-sm text-gray-400 block">Publishing Mode</label>
+                     <button 
+                        type="button" 
+                        onClick={handleApplyModeToAll} 
+                        disabled={applyingMode}
+                        className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors flex items-center gap-1 bg-indigo-500/10 px-2 py-1 rounded-md"
+                     >
+                        {applyingMode ? <Loader2 className="w-3 h-3 animate-spin"/> : <Globe className="w-3 h-3"/>}
+                        Apply to All Profiles
+                     </button>
+                   </div>
                    <p className="text-xs text-gray-500 mb-2">Post immediately or schedule each video individually.</p>
                    
                    <div className="flex bg-black/20 p-1 rounded-xl mb-4 border border-surface-border">
