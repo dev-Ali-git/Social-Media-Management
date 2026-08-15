@@ -7,9 +7,11 @@ const fbScript = `
   await page.waitForTimeout(2000);
   await page.getByRole('button', { name: 'Create Reel' }).click({ force: true, timeout: 5000 }).catch(() => {});
   
-  // Intercept the file upload
+  // Intercept the file upload (removed force: true as it breaks native file choosers)
+  await page.keyboard.press('Escape'); // Dismiss any popups
+  await page.waitForTimeout(500);
   const fileChooserPromise = page.waitForEvent('filechooser');
-  await page.getByRole('button', { name: 'Add video' }).click({ force: true });
+  await page.getByRole('button', { name: 'Add video' }).click();
   const fileChooser = await fileChooserPromise;
   await fileChooser.setFiles('video.mp4');
 
@@ -40,8 +42,10 @@ const igScript = `
   await page.waitForTimeout(1000);
   await createBtn.click({ force: true });
 
+  await page.keyboard.press('Escape'); // Dismiss any popups
+  await page.waitForTimeout(500);
   const fileChooserPromise = page.waitForEvent('filechooser');
-  await page.getByRole('button', { name: 'Select from computer' }).click({ force: true });
+  await page.getByRole('button', { name: 'Select from computer' }).click();
   const fileChooser = await fileChooserPromise;
   await fileChooser.setFiles('video.mp4');
 
