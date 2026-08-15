@@ -216,7 +216,7 @@ export default function Home() {
     if (!confirm("Are you sure you want to clear all logs for this profile?")) return;
     await supabase.from("activity_logs").delete().eq("profile_id", selectedProfile.id);
     setLogs([]);
-    setStats({ total: 0, month: 0, errors: 0 });
+    setStats(prev => ({ ...prev, errors: 0 }));
   }
 
   async function exportGlobalHistoryToExcel() {
