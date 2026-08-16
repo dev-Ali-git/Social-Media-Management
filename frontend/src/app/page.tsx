@@ -417,11 +417,12 @@ export default function Home() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {profiles.map(p => {
-                const todayCount = globalHistory.filter(h => 
+                const todayUploads = globalHistory.filter(h => 
                   h.profile_id === p.id && 
                   new Date(h.created_at).toDateString() === new Date().toDateString() &&
                   h.status.startsWith('success')
-                ).length;
+                );
+                const todayCount = new Set(todayUploads.map(h => h.file_name)).size;
                 return (
                 <div key={p.id} className="border border-surface-border bg-black/20 rounded-xl p-4 flex flex-col gap-2 relative group">
                   <div className="flex justify-between items-center">
