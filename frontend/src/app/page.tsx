@@ -234,23 +234,41 @@ export default function Home() {
         return;
       }
 
-      // Group by profile name
-      const groupedByProfile: Record<string, any[]> = {};
+      // Group by profile, then by video name
+      const groupedByProfile: Record<string, any> = {};
+      
       data.forEach(item => {
         const pName = item.profiles?.name || 'Unknown Profile';
         if (!groupedByProfile[pName]) {
-          groupedByProfile[pName] = [];
+          groupedByProfile[pName] = {};
         }
-        // Exclude hidden suffix in export for cleaner data
-        const displayStatus = item.status.replace('_hidden', '');
         
-        groupedByProfile[pName].push({
-          "Date": new Date(item.created_at).toLocaleString(),
-          "Video Name": item.file_name,
-          "Platform": item.platform.toUpperCase(),
-          "Status": displayStatus.toUpperCase(),
-          "Error Message": item.error_message || ""
-        });
+        if (!groupedByProfile[pName][item.file_name]) {
+            groupedByProfile[pName][item.file_name] = {
+                date: item.created_at,
+                tiktok: { status: '–', error: '' },
+                instagram: { status: '–', error: '' },
+                facebook: { status: '–', error: '' },
+                youtube: { status: '–', error: '' },
+            };
+        }
+        
+        const plat = item.platform.toLowerCase();
+        if (groupedByProfile[pName][item.file_name][plat]) {
+            // Only update if we haven't seen a status for this platform yet 
+            // (since data is ordered newest first, we capture the latest attempt)
+            if (groupedByProfile[pName][item.file_name][plat].status === '–') {
+                if (item.status.startsWith('success')) {
+                    groupedByProfile[pName][item.file_name][plat].status = '✅';
+                } else if (item.status.startsWith('failed') || item.status.startsWith('error')) {
+                    groupedByProfile[pName][item.file_name][plat].status = '❌';
+                    groupedByProfile[pName][item.file_name][plat].error = item.error_message || 'Failed';
+                } else {
+                    // For pending or other statuses
+                    groupedByProfile[pName][item.file_name][plat].status = item.status.replace('_hidden', '');
+                }
+            }
+        }
       });
 
       // Create a new workbook
@@ -258,15 +276,39 @@ export default function Home() {
 
       // Create a sheet for each profile
       Object.keys(groupedByProfile).forEach(profileName => {
-        const ws = XLSX.utils.json_to_sheet(groupedByProfile[profileName]);
+        const rows: any[] = [];
         
-        // Auto-size columns slightly
+        Object.keys(groupedByProfile[profileName]).forEach(videoName => {
+            const video = groupedByProfile[profileName][videoName];
+            
+            const errors = [];
+            if (video.tiktok.error) errors.push(`TikTok: ${video.tiktok.error}`);
+            if (video.instagram.error) errors.push(`IG: ${video.instagram.error}`);
+            if (video.facebook.error) errors.push(`FB: ${video.facebook.error}`);
+            if (video.youtube.error) errors.push(`YT: ${video.youtube.error}`);
+            
+            rows.push({
+                "Date": new Date(video.date).toLocaleString(),
+                "Video Name": videoName,
+                "TikTok": video.tiktok.status,
+                "Instagram": video.instagram.status,
+                "Facebook": video.facebook.status,
+                "YouTube": video.youtube.status,
+                "Errors": errors.join(" | ")
+            });
+        });
+
+        const ws = XLSX.utils.json_to_sheet(rows);
+        
+        // Auto-size columns
         ws['!cols'] = [
           { wch: 20 }, // Date
           { wch: 50 }, // Video Name
-          { wch: 15 }, // Platform
-          { wch: 15 }, // Status
-          { wch: 40 }  // Error Message
+          { wch: 10 }, // TikTok
+          { wch: 10 }, // Instagram
+          { wch: 10 }, // Facebook
+          { wch: 10 }, // YouTube
+          { wch: 40 }  // Errors
         ];
 
         // Ensure sheet name is valid length (Excel limits to 31 chars)
