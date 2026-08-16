@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, FolderSync, CalendarDays, Settings, PlaySquare, Menu, X } from "lucide-react";
+import { LayoutDashboard, FolderSync, CalendarDays, Settings, PlaySquare, Menu, X, Activity } from "lucide-react";
 import clsx from "clsx";
+import { supabase } from "@/lib/supabase";
 
 const navItems = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
@@ -17,6 +18,33 @@ const navItems = [
 export default function Sidebar() {
   const pathname = usePathname();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [workerStatus, setWorkerStatus] = useState<"Idle / Ready" | "Running...">("Idle / Ready");
+
+  useEffect(() => {
+    checkWorkerStatus();
+    const interval = setInterval(checkWorkerStatus, 30000); // Check every 30s
+    return () => clearInterval(interval);
+  }, []);
+
+  async function checkWorkerStatus() {
+    const { data } = await supabase
+      .from('activity_logs')
+      .select('created_at')
+      .order('created_at', { ascending: false })
+      .limit(1);
+      
+    if (data && data.length > 0) {
+      const lastActivity = new Date(data[0].created_at);
+      const now = new Date();
+      const diffMs = now.getTime() - lastActivity.getTime();
+      // If activity within last 5 mins (300000 ms), consider it running
+      if (diffMs < 300000) {
+        setWorkerStatus("Running...");
+        return;
+      }
+    }
+    setWorkerStatus("Idle / Ready");
+  }
 
   return (
     <>
@@ -74,10 +102,10 @@ export default function Sidebar() {
         
         <div className="mt-auto mb-4 md:block hidden">
            <div className="p-4 rounded-xl bg-surface border border-surface-border">
-              <p className="text-xs text-gray-400 mb-2">Worker Status</p>
+              <p className="text-xs text-gray-400 mb-2 flex items-center gap-1"><Activity className="w-3 h-3"/> Worker Status</p>
               <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-                  <span className="text-sm font-medium">Idle / Ready</span>
+                  <div className={`w-2 h-2 rounded-full animate-pulse ${workerStatus === 'Running...' ? 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.6)]' : 'bg-green-500'}`}></div>
+                  <span className={`text-sm font-medium ${workerStatus === 'Running...' ? 'text-amber-400' : 'text-gray-200'}`}>{workerStatus}</span>
               </div>
            </div>
         </div>

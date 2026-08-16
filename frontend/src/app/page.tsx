@@ -42,7 +42,7 @@ export default function Home() {
       .from("video_uploads")
       .select("*, profiles(name)")
       .order("created_at", { ascending: false })
-      .limit(100);
+      .limit(500);
       
     if (data) {
       setGlobalHistory(data);
@@ -374,17 +374,24 @@ export default function Home() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {profiles.map(p => (
-                <div key={p.id} className="border border-surface-border bg-black/20 rounded-xl p-4 flex flex-col gap-2 relative">
+              {profiles.map(p => {
+                const todayCount = globalHistory.filter(h => 
+                  h.profile_id === p.id && 
+                  new Date(h.created_at).toDateString() === new Date().toDateString() &&
+                  h.status.startsWith('success')
+                ).length;
+                return (
+                <div key={p.id} className="border border-surface-border bg-black/20 rounded-xl p-4 flex flex-col gap-2 relative group">
                   <div className="flex justify-between items-center">
                     <span className="font-semibold text-gray-200">{p.name}</span>
                     <div className={`w-2 h-2 rounded-full ${p.is_active !== false ? 'bg-green-500' : 'bg-red-500/50'}`} />
                   </div>
-                  <div className="text-xs text-gray-500">
-                    Status: {p.is_active !== false ? 'Active' : 'Paused'}
+                  <div className="text-xs text-gray-500 flex justify-between items-center mt-1">
+                    <span>Status: {p.is_active !== false ? 'Active' : 'Paused'}</span>
+                    <span className="text-indigo-400 font-medium bg-indigo-500/10 px-2 py-0.5 rounded">{todayCount} Upload{todayCount !== 1 ? 's' : ''} Today</span>
                   </div>
                 </div>
-              ))}
+              )})}
             </div>
 
             <div className="border border-surface-border bg-surface backdrop-blur-md rounded-2xl overflow-hidden flex flex-col h-[500px]">
